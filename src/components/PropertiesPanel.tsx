@@ -1,7 +1,7 @@
 
 const PropertiesPanel = () => {
   return (
-    <aside className="w-72 bg-zinc-800 border-l border-zinc-700 p-4 text-sm overflow-auto rounded-xl shadow-lg m-3">
+    <aside className="absolute top-2 right-2 w-72 bg-zinc-800 border-l border-zinc-700 p-4 text-sm overflow-auto rounded-xl shadow-lg m-3">
       <h2 className="text-xs text-zinc-400 uppercase mb-2">Properties</h2>
 
       <div className="space-y-2">
