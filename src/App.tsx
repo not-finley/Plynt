@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef} from 'react'
 import './App.css'
 import Topbar from './components/Topbar'
 import { initWebGPU } from './core/gpu'
@@ -9,7 +9,7 @@ function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (canvasRef.current) initWebGPU(canvasRef.current);
+    if (canvasRef.current) initWebGPU(canvasRef.current, "/teapot.obj");
   }, []);
 
 
