@@ -1,30 +1,56 @@
 export function parseOBJ(objText: string) {
-    const positions: number[] = [];
+    const rawPositions: number[][] = [];
+    const rawNormals: number[][] = [];
+
+    const finalPositions: number[] = [];
+    const finalNormals: number[] = [];
     const indices: number[] = [];
+
+    const vertexMap = new Map<VertexKey, number>(); // maps "vIndex//vnIndex" → final index
+    let nextIndex = 0;
 
     const lines = objText.split("\n");
     for (const line of lines) {
         const parts = line.trim().split(/\s+/);
-        if (parts[0] === 'v') {
-        // Vertex position
-        positions.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
-        } else if (parts[0] === 'f') {
-        // Face (1-based indexing in .obj)
-        for (let i = 1; i < parts.length - 2; i++) {
-            const a = parts[1].split("/")[0];
-            const b = parts[i + 1].split("/")[0];
-            const c = parts[i + 2].split("/")[0];
-            indices.push(
-            parseInt(a) - 1,
-            parseInt(b) - 1,
-            parseInt(c) - 1
-            );
-        }
+        if (parts[0] === "v") {
+            rawPositions.push([
+                parseFloat(parts[1]),
+                parseFloat(parts[2]),
+                parseFloat(parts[3]),
+            ]);
+        } else if (parts[0] === "vn") {
+            rawNormals.push([
+                parseFloat(parts[1]),
+                parseFloat(parts[2]),
+                parseFloat(parts[3]),
+            ]);
+        } else if (parts[0] === "f") {
+            const faceVertices = parts.slice(1);
+            for (let i = 1; i < faceVertices.length - 1; i++) {
+                const v0 = faceVertices[0];
+                const v1 = faceVertices[i];
+                const v2 = faceVertices[i + 1];
+                for (const v of [v0, v1, v2]) {
+                    const [vIdx, , vnIdx] = v.split("/").map(Number);
+                    const key = `${vIdx}//${vnIdx}`;
+
+                    if (!vertexMap.has(key)) {
+                        const pos = rawPositions[vIdx - 1];
+                        const normal = rawNormals[vnIdx - 1];
+                        finalPositions.push(...pos);
+                        finalNormals.push(...normal);
+                        vertexMap.set(key, nextIndex++);
+                    }
+
+                    indices.push(vertexMap.get(key)!);
+                }
+            }
         }
     }
 
     return {
-        positions: new Float32Array(positions),
+        positions: new Float32Array(finalPositions),
+        normals: new Float32Array(finalNormals),
         indices: new Uint32Array(indices),
     };
 }

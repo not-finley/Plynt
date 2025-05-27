@@ -3,22 +3,18 @@ import { initWebGPU } from "../core/gpu";
 import PropertiesPanel from "./PropertiesPanel";
 import Sidebar from "./Sidebar";
 import { Paintbrush } from "lucide-react";
-import { parseOBJ } from "../core/parseOBJ";
+
 
 export default function CanvasArea() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
       if (canvasRef.current) {
-        initWebGPU(canvasRef.current);
+        initWebGPU(canvasRef.current, "/teapot.obj");
       }
     }, []);
+    
 
-
-
-    const teapot = parseOBJ(teapot)
-
-    console.log(teapot);
   
     return (
       <div className="flex-1 bg-zinc-800 relative overflow-hidden">
@@ -31,9 +27,9 @@ export default function CanvasArea() {
   
         {/* Floating Sidebar */}
         
-        <Sidebar />
+        {/* <Sidebar /> */}
 
-        <PropertiesPanel />
+        {/* <PropertiesPanel /> */}
       </div>
     );
 }
