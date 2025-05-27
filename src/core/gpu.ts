@@ -207,7 +207,7 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
     const eyeY = radius * Math.cos(phi);
     const eyeZ = radius * Math.sin(phi) * Math.cos(theta);
     const view = mat4.lookAt(mat4.create(), [eyeX, eyeY, eyeZ], [0, 0, 0], [0, 1, 0]);
-    const model = mat4.rotateY(mat4.create(), mat4.create(), 0.0);
+    const model = mat4.rotateY(mat4.create(), mat4.create(), 0.0 * time);
     const mvp = mat4.multiply(mat4.create(), projection, mat4.multiply(mat4.create(), view, model));
     const normalMatrix = mat4.transpose(mat4.create(), mat4.invert(mat4.create(), model));
     const lightDir = new Float32Array([19, 1, 1, 0]);

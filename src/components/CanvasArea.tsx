@@ -27,9 +27,9 @@ export default function CanvasArea() {
   
         {/* Floating Sidebar */}
         
-        {/* <Sidebar /> */}
+        <Sidebar />
 
-        {/* <PropertiesPanel /> */}
+        <PropertiesPanel />
       </div>
     );
 }
