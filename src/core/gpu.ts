@@ -63,18 +63,21 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
 
   window.addEventListener("resize", resizeCanvas);
 
-  const model = await loadOBJ(objURL)
+  const model = await loadOBJ(objURL);
   console.log("Model loaded:", model);
+  console.log("Uvs length:", model.uvs.length, "Expected:", model.positions.length * 2 / 3);
   const position = model.positions;
   const normal = model.normals;
   const indexData = model.indices;
+  const uvs = model.uvs;
 
 
   const vertexCount = position.length / 3;
-  const vertexData = new Float32Array(vertexCount * 6);
+  const vertexData = new Float32Array(vertexCount * 8);
   for (let i = 0; i < vertexCount; i++) {
-    vertexData.set(position.slice(i * 3, i * 3 + 3), i * 6);
-    vertexData.set(normal.slice(i * 3, i * 3 + 3), i * 6 + 3);
+    vertexData.set(position.slice(i * 3, i * 3 + 3), i * 8);
+    vertexData.set(normal.slice(i * 3, i * 3 + 3), i * 8 + 3);
+    vertexData.set(uvs.slice(i * 2, i * 2 + 2), i * 8 + 6);
   }
 
   const vertexBuffer = device.createBuffer({
@@ -98,45 +101,104 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
       };
       @group(0) @binding(0) var<uniform> uniforms : Uniforms;
 
+      // struct VertexInput {
+      //   @location(0) position : vec3<f32>,
+      //   @location(1) normal : vec3<f32>,
+      //   @location(2) uv : vec2<f32>,
+      // };
+
+      // struct VertexOutput {
+      //   @builtin(position) position : vec4<f32>,
+      //   @location(0) fragUV : vec2<f32>,
+      //   @location(1) worldNormal : vec3<f32>,
+      // };
+
       struct VertexInput {
         @location(0) position : vec3<f32>,
         @location(1) normal : vec3<f32>,
+        @location(2) uv : vec2<f32>,
       };
-
       struct VertexOutput {
         @builtin(position) position : vec4<f32>,
         @location(0) fragNormal : vec3<f32>,
+        @location(1) worldNormal : vec3<f32>,
       };
 
+
+      // struct VertexOutput {
+      //   @builtin(position) position : vec4<f32>,
+      //   @location(0) fragNormal : vec3<f32>,
+      // };
+
+      // @vertex
+      // fn vs_main(input : VertexInput) -> VertexOutput {
+      //   var output : VertexOutput;
+      //   output.position = uniforms.modelViewProj * vec4<f32>(input.position, 1.0);
+      //   let worldNormal = (uniforms.normalMatrix * vec4<f32>(input.normal, 0.0)).xyz;
+      //   output.worldNormal = normalize(worldNormal);
+      //   output.fragUV = input.uv;
+      //   return output;
+      // }
       @vertex
       fn vs_main(input : VertexInput) -> VertexOutput {
         var output : VertexOutput;
         output.position = uniforms.modelViewProj * vec4<f32>(input.position, 1.0);
-        output.fragNormal = normalize((uniforms.normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
+        let worldNormal = (uniforms.normalMatrix * vec4<f32>(input.normal, 0.0)).xyz;
+        output.fragNormal = normalize(worldNormal);
+        output.worldNormal = normalize(worldNormal);
         return output;
       }
 
+
+      // @vertex
+      // fn vs_main(input : VertexInput) -> VertexOutput {
+      //   var output : VertexOutput;
+      //   output.position = uniforms.modelViewProj * vec4<f32>(input.position, 1.0);
+      //   output.fragNormal = normalize((uniforms.normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
+      //   return output;
+      // }
+
+      // @fragment
+      // fn fs_main(@location(0) fragNormal : vec3<f32>) -> @location(0) vec4<f32> {
+      //   let N = normalize(fragNormal);
+      //   let L = normalize(uniforms.lightDir.xyz);
+
+      //   // Hemispheric light: sky = bluish, ground = warm
+      //   let skyColor = vec3<f32>(0.6, 0.7, 1.0);
+      //   let groundColor = vec3<f32>(0.3, 0.25, 0.2);
+      //   let hemiFactor = N.y * 0.5 + 0.5;
+      //   let hemiLight = mix(groundColor, skyColor, hemiFactor);
+
+      //   // Directional light (like the sun)
+      //   let diff = max(dot(N, L), 0.0);
+      //   let directionalLight = vec3<f32>(1.0, 0.95, 0.9) * diff;
+
+      //   // Combine hemispheric + directional + ambient bounce
+      //   let ambient = vec3<f32>(0.1, 0.1, 0.1);
+      //   let color = hemiLight * 0.6 + directionalLight * 0.5 + ambient;
+
+      //   return vec4<f32>(color, 1.0);
+      // }
+
       @fragment
-      fn fs_main(@location(0) fragNormal : vec3<f32>) -> @location(0) vec4<f32> {
-        let N = normalize(fragNormal);
-        let L = normalize(uniforms.lightDir.xyz);
-
-        // Hemispheric light: sky = bluish, ground = warm
-        let skyColor = vec3<f32>(0.6, 0.7, 1.0);
-        let groundColor = vec3<f32>(0.3, 0.25, 0.2);
-        let hemiFactor = N.y * 0.5 + 0.5;
-        let hemiLight = mix(groundColor, skyColor, hemiFactor);
-
-        // Directional light (like the sun)
-        let diff = max(dot(N, L), 0.0);
-        let directionalLight = vec3<f32>(1.0, 0.95, 0.9) * diff;
-
-        // Combine hemispheric + directional + ambient bounce
-        let ambient = vec3<f32>(0.1, 0.1, 0.1);
-        let color = hemiLight * 0.6 + directionalLight * 0.5 + ambient;
-
-        return vec4<f32>(color, 1.0);
+      fn fs_main(@location(1) worldNormal : vec3<f32>) -> @location(0) vec4<f32> {
+        // Transform normal from [-1, 1] to [0, 1] for color display
+        let normalColor = worldNormal * 0.5 + vec3<f32>(0.5);
+        return vec4<f32>(normalColor, 1.0);
       }
+
+      // @fragment
+      // fn fs_main(@location(0) fragUV : vec2<f32>) -> @location(0) vec4<f32> {
+      //   let scale = 20.0; // number of checker squares per UV space (0-1)
+      //   let uvScaled = fragUV * scale;
+
+      //   // Floor to get cell index, mod 2 to alternate
+      //   let checker = i32(floor(uvScaled.x)) + i32(floor(uvScaled.y));
+      //   let isWhite = (checker % 2) == 0;
+
+      //   let color = select(vec3<f32>(0.3), vec3<f32>(0.9), isWhite);
+      //   return vec4<f32>(color, 1.0);
+      //}
     `,
   });
 
@@ -169,10 +231,11 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
       module: shaderModule,
       entryPoint: "vs_main",
       buffers: [{
-        arrayStride: 6 * 4,
+        arrayStride: 32,
         attributes: [
-          { shaderLocation: 0, offset: 0, format: "float32x3" },
-          { shaderLocation: 1, offset: 12, format: "float32x3" },
+          { shaderLocation: 0, offset: 0, format: "float32x3" }, // position
+          { shaderLocation: 1, offset: 12, format: "float32x3" }, // normal
+          { shaderLocation: 2, offset: 24, format: "float32x2" }, // uv
         ]
       }]
     },

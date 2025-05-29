@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { initWebGPU } from "../core/gpu";
-import PropertiesPanel from "./PropertiesPanel";
-import Sidebar from "./Sidebar";
+// import PropertiesPanel from "./PropertiesPanel";
+// import Sidebar from "./Sidebar";
 import { Paintbrush } from "lucide-react";
 
 
@@ -27,9 +27,9 @@ export default function CanvasArea() {
   
         {/* Floating Sidebar */}
         
-        <Sidebar />
+        {/* <Sidebar /> */}
 
-        <PropertiesPanel />
+        {/* <PropertiesPanel /> */}
       </div>
     );
 }
