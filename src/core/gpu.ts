@@ -1,5 +1,8 @@
 import { mat4 } from "gl-matrix";
 import { loadOBJ } from "./parseOBJ";
+import MainShaderCode from "../Shaders/MainShader.wgsl?raw";
+// import UVShaderCode from "../Shaders/UVShader.wgsl?raw";
+// import CheckerShaderCode from "../Shaders/CheckerShader.wgsl?raw";
 
 export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
   let theta = 0; // horizontal angle
@@ -93,113 +96,7 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
   device.queue.writeBuffer(indexBuffer, 0, indexData);
 
   const shaderModule = device.createShaderModule({
-    code: /* wgsl */`
-      struct Uniforms {
-        modelViewProj : mat4x4<f32>,
-        normalMatrix : mat4x4<f32>,
-        lightDir : vec4<f32>,
-      };
-      @group(0) @binding(0) var<uniform> uniforms : Uniforms;
-
-      // struct VertexInput {
-      //   @location(0) position : vec3<f32>,
-      //   @location(1) normal : vec3<f32>,
-      //   @location(2) uv : vec2<f32>,
-      // };
-
-      // struct VertexOutput {
-      //   @builtin(position) position : vec4<f32>,
-      //   @location(0) fragUV : vec2<f32>,
-      //   @location(1) worldNormal : vec3<f32>,
-      // };
-
-      struct VertexInput {
-        @location(0) position : vec3<f32>,
-        @location(1) normal : vec3<f32>,
-        @location(2) uv : vec2<f32>,
-      };
-      struct VertexOutput {
-        @builtin(position) position : vec4<f32>,
-        @location(0) fragNormal : vec3<f32>,
-        @location(1) worldNormal : vec3<f32>,
-      };
-
-
-      // struct VertexOutput {
-      //   @builtin(position) position : vec4<f32>,
-      //   @location(0) fragNormal : vec3<f32>,
-      // };
-
-      // @vertex
-      // fn vs_main(input : VertexInput) -> VertexOutput {
-      //   var output : VertexOutput;
-      //   output.position = uniforms.modelViewProj * vec4<f32>(input.position, 1.0);
-      //   let worldNormal = (uniforms.normalMatrix * vec4<f32>(input.normal, 0.0)).xyz;
-      //   output.worldNormal = normalize(worldNormal);
-      //   output.fragUV = input.uv;
-      //   return output;
-      // }
-      @vertex
-      fn vs_main(input : VertexInput) -> VertexOutput {
-        var output : VertexOutput;
-        output.position = uniforms.modelViewProj * vec4<f32>(input.position, 1.0);
-        let worldNormal = (uniforms.normalMatrix * vec4<f32>(input.normal, 0.0)).xyz;
-        output.fragNormal = normalize(worldNormal);
-        output.worldNormal = normalize(worldNormal);
-        return output;
-      }
-
-
-      // @vertex
-      // fn vs_main(input : VertexInput) -> VertexOutput {
-      //   var output : VertexOutput;
-      //   output.position = uniforms.modelViewProj * vec4<f32>(input.position, 1.0);
-      //   output.fragNormal = normalize((uniforms.normalMatrix * vec4<f32>(input.normal, 0.0)).xyz);
-      //   return output;
-      // }
-
-      // @fragment
-      // fn fs_main(@location(0) fragNormal : vec3<f32>) -> @location(0) vec4<f32> {
-      //   let N = normalize(fragNormal);
-      //   let L = normalize(uniforms.lightDir.xyz);
-
-      //   // Hemispheric light: sky = bluish, ground = warm
-      //   let skyColor = vec3<f32>(0.6, 0.7, 1.0);
-      //   let groundColor = vec3<f32>(0.3, 0.25, 0.2);
-      //   let hemiFactor = N.y * 0.5 + 0.5;
-      //   let hemiLight = mix(groundColor, skyColor, hemiFactor);
-
-      //   // Directional light (like the sun)
-      //   let diff = max(dot(N, L), 0.0);
-      //   let directionalLight = vec3<f32>(1.0, 0.95, 0.9) * diff;
-
-      //   // Combine hemispheric + directional + ambient bounce
-      //   let ambient = vec3<f32>(0.1, 0.1, 0.1);
-      //   let color = hemiLight * 0.6 + directionalLight * 0.5 + ambient;
-
-      //   return vec4<f32>(color, 1.0);
-      // }
-
-      @fragment
-      fn fs_main(@location(1) worldNormal : vec3<f32>) -> @location(0) vec4<f32> {
-        // Transform normal from [-1, 1] to [0, 1] for color display
-        let normalColor = worldNormal * 0.5 + vec3<f32>(0.5);
-        return vec4<f32>(normalColor, 1.0);
-      }
-
-      // @fragment
-      // fn fs_main(@location(0) fragUV : vec2<f32>) -> @location(0) vec4<f32> {
-      //   let scale = 20.0; // number of checker squares per UV space (0-1)
-      //   let uvScaled = fragUV * scale;
-
-      //   // Floor to get cell index, mod 2 to alternate
-      //   let checker = i32(floor(uvScaled.x)) + i32(floor(uvScaled.y));
-      //   let isWhite = (checker % 2) == 0;
-
-      //   let color = select(vec3<f32>(0.3), vec3<f32>(0.9), isWhite);
-      //   return vec4<f32>(color, 1.0);
-      //}
-    `,
+    code: MainShaderCode,  // MainShaderCode, UVShaderCode, CheckerShaderCode
   });
 
   // Matrices + lighting uniform

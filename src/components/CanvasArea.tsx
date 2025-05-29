@@ -10,7 +10,7 @@ export default function CanvasArea() {
 
     useEffect(() => {
       if (canvasRef.current) {
-        initWebGPU(canvasRef.current, "/dragon.obj");
+        initWebGPU(canvasRef.current, "/sponza.obj");
       }
     }, []);
     
