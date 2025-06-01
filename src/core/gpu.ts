@@ -26,7 +26,11 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string, shad
     size: [canvas.width, canvas.height],
   });
 
-  let depthTexture: GPUTexture;
+  let depthTexture: GPUTexture = device.createTexture({
+        size: [canvas.width, canvas.height],
+        format: "depth24plus",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      });;
 
   function resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
@@ -34,11 +38,11 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string, shad
     const height = Math.floor(canvas.clientHeight * dpr);
 
     // DEBUG:
-    console.log(
-      "[resizeCanvas] clientSize:", 
-      canvas.clientWidth, "×", canvas.clientHeight, 
-      "→ pixelSize:", width, "×", height
-    );
+    // console.log(
+    //   "[resizeCanvas] clientSize:", 
+    //   canvas.clientWidth, "×", canvas.clientHeight, 
+    //   "→ pixelSize:", width, "×", height
+    // );
 
 
     if (canvas.width !== width || canvas.height !== height) {
@@ -52,15 +56,17 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string, shad
         size: [canvas.width, canvas.height],
       });
 
+      depthTexture?.destroy();
+      depthTexture = device.createTexture({
+        size: [canvas.width, canvas.height],
+        format: "depth24plus",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+
     }
-    depthTexture = device.createTexture({
-      size: [canvas.width, canvas.height],
-      format: "depth24plus",
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
   }
 
-resizeCanvas();
+// resizeCanvas();
   let lastX = 0;
   let lastY = 0;
   let isOrbiting = false;
@@ -92,9 +98,48 @@ resizeCanvas();
       phi -= dy * 0.005;
       phi = Math.max(0.01, Math.min(Math.PI - 0.01, phi));
     } else if (isPanning) {
-      const panSpeed = 0.001 * radius;
-      panX -= dx * panSpeed;
-      panY += dy * panSpeed;
+      const panSpeed = 0.002 * radius;
+
+      // Compute the forward direction vector
+      const sinPhi = Math.sin(phi);
+      const forward = [
+        Math.sin(theta) * sinPhi,
+        Math.cos(phi),
+        Math.cos(theta) * sinPhi,
+      ];
+
+      // Compute the right vector as cross(forward, up)
+      const up = [0, 1, 0];
+      const right = [
+        forward[2] * up[1] - forward[1] * up[2],
+        forward[0] * up[2] - forward[2] * up[0],
+        forward[1] * up[0] - forward[0] * up[1],
+      ];
+
+      // Normalize right vector
+      const rightLength = Math.hypot(...right);
+      right[0] /= rightLength;
+      right[1] /= rightLength;
+      right[2] /= rightLength;
+
+      // Recompute up vector as cross(right, forward)
+      const trueUp = [
+        right[1] * forward[2] - right[2] * forward[1],
+        right[2] * forward[0] - right[0] * forward[2],
+        right[0] * forward[1] - right[1] * forward[0],
+      ];
+
+      // Normalize up vector
+      const upLength = Math.hypot(...trueUp);
+      trueUp[0] /= upLength;
+      trueUp[1] /= upLength;
+      trueUp[2] /= upLength;
+
+      // Pan relative to camera orientation
+      panX -= dx * panSpeed * right[0] + dy * panSpeed * trueUp[0];
+      panY -= dx * panSpeed * right[1] + dy * panSpeed * trueUp[1];
+      // Optional: you can track Z if needed for full panning
+      // panZ -= dx * panSpeed * right[2] + dy * panSpeed * trueUp[2];
     }
   });
 
@@ -104,7 +149,7 @@ resizeCanvas();
     radius = Math.max(1, Math.min(50, radius)); // clamp radius
   });
 
-  window.addEventListener("resize", resizeCanvas);
+  // window.addEventListener("resize", resizeCanvas);
 
   const model = await loadOBJ(objURL);
   const position = model.positions;
