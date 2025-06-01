@@ -1,13 +1,15 @@
 import { mat4 } from "gl-matrix";
 import { loadOBJ } from "./parseOBJ";
 import MainShaderCode from "../Shaders/MainShader.wgsl?raw";
-// import UVShaderCode from "../Shaders/UVShader.wgsl?raw";
-// import CheckerShaderCode from "../Shaders/CheckerShader.wgsl?raw";
+import UVShaderCode from "../Shaders/UVShader.wgsl?raw";
+import CheckerShaderCode from "../Shaders/CheckerShader.wgsl?raw";
 
-export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
+export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string, shaderIndex = 0) {
   let theta = 0; // horizontal angle
   let phi = 0.5; // vertical angle
   let radius = 6.0; // distance from the object
+  let panX = 0;
+  let panY = 0;
   if (!navigator.gpu) throw new Error("WebGPU not supported.");
 
   const adapter = await navigator.gpu.requestAdapter();
@@ -15,47 +17,85 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
   const device = await adapter.requestDevice();
 
   const context = canvas.getContext("webgpu") as GPUCanvasContext;
+  if (!context) throw new Error("Failed to get WebGPU context.");
   const format = navigator.gpu.getPreferredCanvasFormat();
+  context.configure({
+    device,
+    format,
+    alphaMode: "opaque",
+    size: [canvas.width, canvas.height],
+  });
+
+  let depthTexture: GPUTexture;
 
   function resizeCanvas() {
-    const devicePixelRatio = window.devicePixelRatio || 1;
-    const width = canvas.clientWidth * devicePixelRatio;
-    const height = canvas.clientHeight * devicePixelRatio;
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.floor(canvas.clientWidth * dpr);
+    const height = Math.floor(canvas.clientHeight * dpr);
+
+    // DEBUG:
+    console.log(
+      "[resizeCanvas] clientSize:", 
+      canvas.clientWidth, "×", canvas.clientHeight, 
+      "→ pixelSize:", width, "×", height
+    );
+
+
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;
-    }
 
-    context.configure({
-      device,
-      format,
-      alphaMode: "opaque",
+      context.configure({
+        device,
+        format,
+        alphaMode: "opaque",
+        size: [canvas.width, canvas.height],
+      });
+
+    }
+    depthTexture = device.createTexture({
+      size: [canvas.width, canvas.height],
+      format: "depth24plus",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
   }
 
-  resizeCanvas();
-  let isDragging = false;
+resizeCanvas();
   let lastX = 0;
   let lastY = 0;
+  let isOrbiting = false;
+  let isPanning = false;
+
   canvas.addEventListener("mousedown", (e) => {
-    isDragging = true;
+    if (e.altKey && e.button === 0) { // Alt + Left
+      isOrbiting = true;
+    } else if (e.shiftKey && e.button === 0 ) { // Alt + Middle or Right
+      isPanning = true;
+    }
     lastX = e.clientX;
     lastY = e.clientY;
   });
 
   canvas.addEventListener("mouseup", () => {
-    isDragging = false;
+    isOrbiting = false;
+    isPanning = false;
   });
 
   canvas.addEventListener("mousemove", (e) => {
-    if (!isDragging) return;
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
     lastX = e.clientX;
     lastY = e.clientY;
-    theta -= dx * 0.005; // rotate left/right
-    phi -= dy * 0.005;    // rotate up/down
-    phi = Math.max(0.01, Math.min(Math.PI - 0.01, phi)); // clamp phi
+
+    if (isOrbiting) {
+      theta -= dx * 0.005;
+      phi -= dy * 0.005;
+      phi = Math.max(0.01, Math.min(Math.PI - 0.01, phi));
+    } else if (isPanning) {
+      const panSpeed = 0.001 * radius;
+      panX -= dx * panSpeed;
+      panY += dy * panSpeed;
+    }
   });
 
   canvas.addEventListener("wheel", (e) => {
@@ -67,8 +107,6 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
   window.addEventListener("resize", resizeCanvas);
 
   const model = await loadOBJ(objURL);
-  console.log("Model loaded:", model);
-  console.log("Uvs length:", model.uvs.length, "Expected:", model.positions.length * 2 / 3);
   const position = model.positions;
   const normal = model.normals;
   const indexData = model.indices;
@@ -95,10 +133,6 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
   });
   device.queue.writeBuffer(indexBuffer, 0, indexData);
 
-  const shaderModule = device.createShaderModule({
-    code: MainShaderCode,  // MainShaderCode, UVShaderCode, CheckerShaderCode
-  });
-
   // Matrices + lighting uniform
   const uniformBuffer = device.createBuffer({
     size: 64 * 2 + 16,
@@ -122,9 +156,18 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
   });
 
 
-  const pipeline = device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-    vertex: {
+  function getShaderCode(shaderIndex: number) {
+    if(shaderIndex === 1) return UVShaderCode;
+    if (shaderIndex === 2) return CheckerShaderCode;
+    return MainShaderCode;
+
+  }
+
+  function createPipeline(shaderIndex: number) {
+    const shaderModule = device.createShaderModule({ code: getShaderCode(shaderIndex)});
+    return device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout]}),
+      vertex: {
       module: shaderModule,
       entryPoint: "vs_main",
       buffers: [{
@@ -147,29 +190,77 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
       depthCompare: "less",
       format: "depth24plus"
     }
-  });
+    });
+  }
 
-  const depthTexture = device.createTexture({
-    size: [canvas.width, canvas.height],
-    format: "depth24plus",
-    usage: GPUTextureUsage.RENDER_ATTACHMENT
-  });
+  let currentShaderIndex = shaderIndex;
+  let pipeline = createPipeline(currentShaderIndex);
 
-  function frame(time: number) {
+  function updateShader(newShaderIndex: number) {
+    if (newShaderIndex !== currentShaderIndex) {
+      pipeline = createPipeline(newShaderIndex);
+      currentShaderIndex = newShaderIndex;
+    }
+  }
+
+
+
+
+  // const shaderModule = device.createShaderModule({
+  //   code: shaderCode,
+  // });
+
+
+  // const pipeline = device.createRenderPipeline({
+  //   layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+  //   vertex: {
+  //     module: shaderModule,
+  //     entryPoint: "vs_main",
+  //     buffers: [{
+  //       arrayStride: 32,
+  //       attributes: [
+  //         { shaderLocation: 0, offset: 0, format: "float32x3" }, // position
+  //         { shaderLocation: 1, offset: 12, format: "float32x3" }, // normal
+  //         { shaderLocation: 2, offset: 24, format: "float32x2" }, // uv
+  //       ]
+  //     }]
+  //   },
+  //   fragment: {
+  //     module: shaderModule,
+  //     entryPoint: "fs_main",
+  //     targets: [{ format }],
+  //   },
+  //   primitive: { topology: "triangle-list", cullMode: "none" },
+  //   depthStencil: {
+  //     depthWriteEnabled: true,
+  //     depthCompare: "less",
+  //     format: "depth24plus"
+  //   }
+  // });
+
+  let stopped = false;
+
+  function renderLoop() {
+    if (stopped) return;
     resizeCanvas();
-
+    if (!depthTexture) {
+      return;
+    }
     // Matrices
     const aspect = canvas.width / canvas.height;
     const fov = Math.PI / 4;
     const near = 0.1, far = 100;
     const projection = mat4.perspective(mat4.create(), fov, aspect, near, far);
-    const eyeX = radius * Math.sin(phi) * Math.sin(theta);
-    const eyeY = radius * Math.cos(phi);
+    const eyeX = radius * Math.sin(phi) * Math.sin(theta) + panX;
+    const eyeY = radius * Math.cos(phi) + panY;
     const eyeZ = radius * Math.sin(phi) * Math.cos(theta);
-    const view = mat4.lookAt(mat4.create(), [eyeX, eyeY, eyeZ], [0, 0, 0], [0, 1, 0]);
-    const model = mat4.rotateY(mat4.create(), mat4.create(), 0.0 * time);
-    const mvp = mat4.multiply(mat4.create(), projection, mat4.multiply(mat4.create(), view, model));
-    const normalMatrix = mat4.transpose(mat4.create(), mat4.invert(mat4.create(), model));
+    const centerX = panX;
+    const centerY = panY;
+    const centerZ = 0;
+    const view = mat4.lookAt(mat4.create(), [eyeX, eyeY, eyeZ], [centerX, centerY, centerZ], [0, 1, 0]);
+    const modelMat = mat4.rotateY(mat4.create(), mat4.create(), 0.0);
+    const mvp = mat4.multiply(mat4.create(), projection, mat4.multiply(mat4.create(), view, modelMat));
+    const normalMatrix = mat4.transpose(mat4.create(), mat4.invert(mat4.create(), modelMat));
     const lightDir = new Float32Array([19, 1, 1, 0]);
 
     device.queue.writeBuffer(uniformBuffer, 0, mvp as Float32Array);
@@ -200,8 +291,12 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string) {
     pass.end();
 
     device.queue.submit([encoder.finish()]);
-    requestAnimationFrame(frame);
+    requestAnimationFrame(renderLoop);
   }
 
-  requestAnimationFrame(frame);
+  function stop() {
+    stopped = true;
+    device.destroy?.();
+  }
+  return { device, context, updateShader, renderLoop, stop };
 }
