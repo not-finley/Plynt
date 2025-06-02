@@ -4,12 +4,26 @@ import MainShaderCode from "../Shaders/MainShader.wgsl?raw";
 import UVShaderCode from "../Shaders/UVShader.wgsl?raw";
 import CheckerShaderCode from "../Shaders/CheckerShader.wgsl?raw";
 
+function cross(a: number[], b: number[]) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function normalize(v: number[]) {
+  const len = Math.hypot(v[0], v[1], v[2]);
+  return len > 0 ? [v[0] / len, v[1] / len, v[2] / len] : [0, 0, 0];
+}
+
+
+
 export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string, shaderIndex = 0) {
   let theta = 0; // horizontal angle
   let phi = 0.5; // vertical angle
   let radius = 6.0; // distance from the object
-  let panX = 0;
-  let panY = 0;
+  let center = [0, 0, 0]; // center of the object
   if (!navigator.gpu) throw new Error("WebGPU not supported.");
 
   const adapter = await navigator.gpu.requestAdapter();
@@ -100,47 +114,53 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string, shad
     } else if (isPanning) {
       const panSpeed = 0.002 * radius;
 
-      // Compute the forward direction vector
-      const sinPhi = Math.sin(phi);
-      const forward = [
-        Math.sin(theta) * sinPhi,
-        Math.cos(phi),
-        Math.cos(theta) * sinPhi,
+      // Recompute eye and forward direction
+      const eye = [
+        center[0] + radius * Math.sin(phi) * Math.sin(theta),
+        center[1] + radius * Math.cos(phi),
+        center[2] + radius * Math.sin(phi) * Math.cos(theta),
+      ];
+      const forward = normalize([
+        center[0] - eye[0],
+        center[1] - eye[1],
+        center[2] - eye[2],
+      ]);
+
+      const worldUp = [0, 1, 0];
+      const right = normalize(cross(forward, worldUp));
+      const up = normalize(cross(right, forward)); // true camera up
+
+      // Compute offset in world space
+      const panOffset = [
+        -dx * panSpeed * right[0] + dy * panSpeed * up[0],
+        -dx * panSpeed * right[1] + dy * panSpeed * up[1],
+        -dx * panSpeed * right[2] + dy * panSpeed * up[2],
       ];
 
-      // Compute the right vector as cross(forward, up)
-      const up = [0, 1, 0];
-      const right = [
-        forward[2] * up[1] - forward[1] * up[2],
-        forward[0] * up[2] - forward[2] * up[0],
-        forward[1] * up[0] - forward[0] * up[1],
-      ];
+      center[0] += panOffset[0];
+      center[1] += panOffset[1];
+      center[2] += panOffset[2];
+    }
 
-      // Normalize right vector
-      const rightLength = Math.hypot(...right);
-      right[0] /= rightLength;
-      right[1] /= rightLength;
-      right[2] /= rightLength;
 
       // Recompute up vector as cross(right, forward)
-      const trueUp = [
-        right[1] * forward[2] - right[2] * forward[1],
-        right[2] * forward[0] - right[0] * forward[2],
-        right[0] * forward[1] - right[1] * forward[0],
-      ];
+      // const trueUp = [
+      //   right[1] * forward[2] - right[2] * forward[1],
+      //   right[2] * forward[0] - right[0] * forward[2],
+      //   right[0] * forward[1] - right[1] * forward[0],
+      // ];
 
-      // Normalize up vector
-      const upLength = Math.hypot(...trueUp);
-      trueUp[0] /= upLength;
-      trueUp[1] /= upLength;
-      trueUp[2] /= upLength;
+      // // Normalize up vector
+      // const upLength = Math.hypot(...trueUp);
+      // trueUp[0] /= upLength;
+      // trueUp[1] /= upLength;
+      // trueUp[2] /= upLength;
 
-      // Pan relative to camera orientation
-      panX -= dx * panSpeed * right[0] + dy * panSpeed * trueUp[0];
-      panY -= dx * panSpeed * right[1] + dy * panSpeed * trueUp[1];
-      // Optional: you can track Z if needed for full panning
+      // // Pan relative to camera orientation
+      // panX -= dx * panSpeed * right[0] + dy * panSpeed * trueUp[0];
+      // panY -= dx * panSpeed * right[1] + dy * panSpeed * trueUp[1];
+      // // Optional: you can track Z if needed for full panning
       // panZ -= dx * panSpeed * right[2] + dy * panSpeed * trueUp[2];
-    }
   });
 
   canvas.addEventListener("wheel", (e) => {
@@ -296,12 +316,12 @@ export async function initWebGPU(canvas: HTMLCanvasElement, objURL: string, shad
     const fov = Math.PI / 4;
     const near = 0.1, far = 100;
     const projection = mat4.perspective(mat4.create(), fov, aspect, near, far);
-    const eyeX = radius * Math.sin(phi) * Math.sin(theta) + panX;
-    const eyeY = radius * Math.cos(phi) + panY;
-    const eyeZ = radius * Math.sin(phi) * Math.cos(theta);
-    const centerX = panX;
-    const centerY = panY;
-    const centerZ = 0;
+    const eyeX = radius * Math.sin(phi) * Math.sin(theta) + center[0];
+    const eyeY = radius * Math.cos(phi) + center[1];
+    const eyeZ = radius * Math.sin(phi) * Math.cos(theta) + center[2];
+    const centerX = center[0];
+    const centerY = center[1];
+    const centerZ = center[2];
     const view = mat4.lookAt(mat4.create(), [eyeX, eyeY, eyeZ], [centerX, centerY, centerZ], [0, 1, 0]);
     const modelMat = mat4.rotateY(mat4.create(), mat4.create(), 0.0);
     const mvp = mat4.multiply(mat4.create(), projection, mat4.multiply(mat4.create(), view, modelMat));
